@@ -11,14 +11,27 @@ pub async fn fetch_historical_data(mysql: &MySQL) -> Result<(), Box<dyn Error>> 
     let mut next_page_token = read_next_page_token_from_file().unwrap_or_default();
     loop {
         println!("Next Page Token: {}", &next_page_token);
+
         match MidGard::fetch_actions_with_nextpage(next_page_token.as_str()).await {
             Ok(resp) => {
-                TransactionHandler::process_and_insert_transaction(&mysql, &resp.actions).await?;
-                next_page_token = resp.meta.nextPageToken.clone();
-                if let Err(e) = write_next_page_token_to_file(&next_page_token) {
-                    println!("Error writing next page token to file: {:?}", e);
-                } else {
-                    println!("Current Token in file : {}", &next_page_token);
+                if resp.actions.is_empty() {
+                    break;
+                }
+                let process_response =
+                    TransactionHandler::process_and_insert_transaction(&mysql, &resp.actions).await;
+
+                match process_response {
+                    Ok(_) => {
+                        next_page_token = resp.meta.nextPageToken.clone();
+                        if let Err(e) = write_next_page_token_to_file(&next_page_token) {
+                            println!("Error writing next page token to file: {:?}", e);
+                        } else {
+                            println!("Current Token in file: {}", &next_page_token);
+                        }
+                    }
+                    Err(err) => {
+                        println!("An unexpected error occurred: {:?}", err);
+                    }
                 }
             }
             Err(err) => {
@@ -27,6 +40,7 @@ pub async fn fetch_historical_data(mysql: &MySQL) -> Result<(), Box<dyn Error>> 
             }
         }
     }
+    Ok(())
 }
 
 pub async fn fetch_latest_data(mysql: &MySQL) -> Result<(), Box<dyn Error>> {

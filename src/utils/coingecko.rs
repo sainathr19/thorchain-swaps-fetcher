@@ -3,7 +3,7 @@ use dotenv::dotenv;
 use once_cell::sync::Lazy;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
-    Client,
+    Client, StatusCode,
 };
 use std::sync::Arc;
 use std::{collections::HashMap, env, error::Error};

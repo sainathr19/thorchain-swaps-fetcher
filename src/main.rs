@@ -17,14 +17,7 @@ async fn home() -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Spawn the fetch_historical_data task
-    tokio::spawn(async { fetch_historical_data().await });
-
-    // Initialize MySQL connection and start CronJob
     let mysql = MySQL::init().await;
-    println!("Now starting CronJob");
-    start_cronjob(mysql.clone()).await;
-
     // Create mysql_data for the Actix app
     let mysql_data = Data::new(mysql);
 

@@ -32,7 +32,7 @@ impl MySQL {
         let time = record.time.clone();
 
         // Executing the insert query
-        sqlx::query!(
+        let _ = sqlx::query!(
             r#"
             INSERT INTO swap_history (timestamp, date, time, tx_id, in_asset, in_amount, in_amount_usd, in_address, out_asset_1, out_amount_1, out_amount_1_usd, out_address_1, out_asset_2, out_amount_2, out_amount_2_usd, out_address_2)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

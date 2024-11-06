@@ -4,11 +4,12 @@ use crate::utils::transaction_handler::TransactionHandler;
 use crate::utils::{read_next_page_token_from_file, write_next_page_token_to_file};
 use chrono::Utc;
 use std::error::Error;
-use std::time::Duration;
-use tokio::time;
 
-pub async fn fetch_historical_data(mysql: &MySQL) -> Result<(), Box<dyn Error>> {
+pub async fn fetch_historical_data() {
+    let mysql = MySQL::init().await;
+
     let mut next_page_token = read_next_page_token_from_file().unwrap_or_default();
+
     loop {
         println!("Next Page Token: {}", &next_page_token);
 
@@ -17,6 +18,7 @@ pub async fn fetch_historical_data(mysql: &MySQL) -> Result<(), Box<dyn Error>> 
                 if resp.actions.is_empty() {
                     break;
                 }
+
                 let process_response =
                     TransactionHandler::process_and_insert_transaction(&mysql, &resp.actions).await;
 
@@ -30,19 +32,19 @@ pub async fn fetch_historical_data(mysql: &MySQL) -> Result<(), Box<dyn Error>> 
                         }
                     }
                     Err(err) => {
-                        println!("An unexpected error occurred: {:?}", err);
+                        println!(
+                            "An unexpected error occurred while processing the transaction: {:?}",
+                            err
+                        );
                     }
                 }
             }
             Err(err) => {
                 println!("Error fetching actions data: {:?}", err);
-                time::sleep(Duration::from_secs(5)).await;
             }
         }
     }
-    Ok(())
 }
-
 pub async fn fetch_latest_data(mysql: &MySQL) -> Result<(), Box<dyn Error>> {
     let latest_timestamp = match mysql.fetch_latest_timestamp().await {
         Ok(Some(timestamp)) => timestamp,

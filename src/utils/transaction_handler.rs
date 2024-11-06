@@ -4,7 +4,7 @@ use crate::{
     models::actions_model::{SwapTransaction, SwapTransactionFromatted, TransactionData},
     utils::{
         asset_name_from_pool, coin_name_from_pool, convert_nano_to_sec, convert_to_standard_unit,
-        format_epoch_timestamp, parse_f64, parse_u64,
+        format_epoch_timestamp, parse_f64,
     },
 };
 use std::error::Error;

@@ -16,7 +16,7 @@ pub struct CoinGecko {
 }
 
 impl CoinGecko {
-    pub fn init() -> Result<Self, Box<dyn Error>> {
+    pub fn init() -> Result<Self, Box<dyn Error + Send + Sync>> {
         dotenv().ok();
         let coingecko_base_url = env::var("COINGECKO_BASE_URL").expect("Coingecko BASE URL needed");
         let coingecko_api_key = env::var("COINGECKO_API_KEY").expect("Coingecko API KEY needed");

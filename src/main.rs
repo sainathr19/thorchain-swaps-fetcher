@@ -14,33 +14,33 @@ use utils::cron::start_cronjob;
 async fn home() -> impl Responder {
     HttpResponse::Ok().body("Rust Backend Server")
 }
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Initialize MySQL connection
+    // Spawn the fetch_historical_data task
+    tokio::spawn(async { fetch_historical_data().await });
+
+    // Initialize MySQL connection and start CronJob
     let mysql = MySQL::init().await;
+    println!("Now starting CronJob");
+    start_cronjob(mysql.clone()).await;
 
-    // Historical Data Fetcher (runs only one time)
-    let res = fetch_historical_data(&mysql).await;
-    match res {
-        Ok(_) => {}
-        Err(err) => {
-            println!("{:?}", err);
-        }
-    }
-
-    println!("Historial Data Fetched . Now starting CronJob");
-    let mysql_clone = mysql.clone();
-    start_cronjob(mysql_clone).await;
+    // Create mysql_data for the Actix app
     let mysql_data = Data::new(mysql);
-    // Start the HTTP server
-    HttpServer::new(move || {
+
+    // Start Actix-web server
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(mysql_data.clone())
             .wrap(Cors::permissive())
             .service(home)
             .configure(routes::swap_history::init)
     })
-    .bind(("0.0.0.0", 3000))?
-    .run()
-    .await
+    .bind(("0.0.0.0", 3000))
+    .expect("Failed to bind Actix server")
+    .run();
+
+    server.await?;
+
+    Ok(())
 }

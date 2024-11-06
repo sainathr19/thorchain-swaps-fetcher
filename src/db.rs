@@ -3,9 +3,8 @@ use sqlx::mysql::MySqlPool;
 use std::{env, error::Error};
 
 use crate::{
-    models::actions_model::SwapTransactionFromatted,
-    routes::swap_history::OrderType,
-    utils::{format_date_for_sql, parse_u64},
+    models::actions_model::SwapTransactionFromatted, routes::swap_history::OrderType,
+    utils::format_date_for_sql,
 };
 
 #[derive(Clone)]
@@ -27,7 +26,7 @@ impl MySQL {
     pub async fn insert_new_record(
         &self,
         record: SwapTransactionFromatted,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send>> {
         // Parsing and formatting the data
         let date = format_date_for_sql(&record.date).unwrap();
         let time = record.time.clone();
@@ -56,7 +55,7 @@ impl MySQL {
             record.out_address_2
         )
         .execute(&self.pool)
-        .await?;
+        .await;
 
         Ok(())
     }
@@ -71,7 +70,8 @@ impl MySQL {
             "#,
         )
         .fetch_one(&self.pool)
-        .await?;
+        .await
+        .expect("Unable to fetch Last Timesstamp");
         Ok(result)
     }
     pub async fn fetch_all(
@@ -81,8 +81,8 @@ impl MySQL {
         sort_by: String,
         offset: u64,
         search: Option<String>,
+        date: Option<String>,
     ) -> Result<Vec<SwapTransactionFromatted>, Box<dyn std::error::Error>> {
-        // Build the base SQL query with ORDER, LIMIT, and OFFSET
         let base_query = format!(
             r#"
             SELECT timestamp, date, time, tx_id, in_asset, in_amount, in_amount_usd, in_address,
@@ -90,6 +90,7 @@ impl MySQL {
                    out_asset_2, out_amount_2, out_amount_2_usd, out_address_2
             FROM swap_history
             WHERE (1 = 1)
+            {}
             {}
             ORDER BY {} {:?}
             LIMIT ? OFFSET ?
@@ -99,6 +100,7 @@ impl MySQL {
             } else {
                 ""
             },
+            if date.is_some() { "AND date = ?" } else { "" },
             sort_by,
             order,
         );
@@ -106,7 +108,7 @@ impl MySQL {
         let mut query = sqlx::query_as::<_, SwapTransactionFromatted>(&base_query);
 
         if let Some(search_term) = search {
-            let search_pattern = format!("%{}%", search_term.clone());
+            let search_pattern = format!("%{}%", search_term);
             query = query
                 .bind(search_pattern.clone())
                 .bind(search_pattern.clone())
@@ -114,6 +116,9 @@ impl MySQL {
                 .bind(search_pattern.clone());
         }
 
+        if let Some(date_value) = date {
+            query = query.bind(date_value);
+        }
         query = query.bind(limit as i64).bind(offset as i64);
 
         let records = query.fetch_all(&self.pool).await?;
@@ -121,3 +126,5 @@ impl MySQL {
         Ok(records)
     }
 }
+
+unsafe impl Send for MySQL {}

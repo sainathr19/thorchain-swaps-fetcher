@@ -17,11 +17,14 @@ async fn home() -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let mysql = MySQL::init().await;
+    tokio::spawn(async move { fetch_historical_data().await });
+
+    let mysql = MySQL::init().await.expect("Error COnnecting to SQL");
+    let mysql_clone = mysql.clone();
+    tokio::spawn(async move { start_cronjob(mysql_clone).await });
+
     // Create mysql_data for the Actix app
     let mysql_data = Data::new(mysql);
-
-    // Start Actix-web server
     let server = HttpServer::new(move || {
         App::new()
             .app_data(mysql_data.clone())

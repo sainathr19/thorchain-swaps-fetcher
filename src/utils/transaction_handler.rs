@@ -7,7 +7,68 @@ use crate::{
         format_epoch_timestamp, parse_f64,
     },
 };
-use std::error::Error;
+use reqwest::Error as ReqwestError;
+use sqlx::Error as SqlxError;
+use std::fmt;
+
+#[derive(Debug)]
+pub enum TransactionError {
+    MissingInCoin,
+    MissingAssetName,
+    MissingAmount,
+    CoinNotFound(String),
+    PriceFetchError(String),
+    MissingTxId,
+    MissingInData,
+    MissingOutData,
+    InvalidStatus,
+    SqlxError(SqlxError),
+    ApiError(String),
+    FileError(String),
+    ProcessingError(String),
+    DatabaseError(String),
+    TimeoutError(String),
+    UnauthorizedError(String),
+    NotFoundError(String),
+}
+
+impl fmt::Display for TransactionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TransactionError::MissingInCoin => write!(f, "Missing in_coin"),
+            TransactionError::MissingAssetName => write!(f, "Error parsing asset name"),
+            TransactionError::MissingAmount => write!(f, "Error parsing amount"),
+            TransactionError::CoinNotFound(coin_name) => write!(f, "Coin not found: {}", coin_name),
+            TransactionError::PriceFetchError(coin_name) => {
+                write!(f, "Price fetch failed for: {}", coin_name)
+            }
+            TransactionError::MissingTxId => write!(f, "Missing or invalid TxId"),
+            TransactionError::MissingInData => write!(f, "No In Data Found"),
+            TransactionError::MissingOutData => write!(f, "No Out Data Found"),
+            TransactionError::InvalidStatus => write!(f, "Swap is in Progress"),
+            TransactionError::SqlxError(err) => write!(f, "SQLx error: {}", err),
+            TransactionError::ApiError(err) => write!(f, "API error: {}", err),
+            TransactionError::FileError(err) => write!(f, "File operation error: {}", err),
+            TransactionError::ProcessingError(err) => write!(f, "Processing error: {}", err),
+            TransactionError::DatabaseError(err) => write!(f, "Database connection error: {}", err),
+            TransactionError::TimeoutError(err) => write!(f, "Timeout error: {}", err),
+            TransactionError::UnauthorizedError(err) => write!(f, "Unauthorized access: {}", err),
+            TransactionError::NotFoundError(err) => write!(f, "Resource not found: {}", err),
+        }
+    }
+}
+
+impl From<ReqwestError> for TransactionError {
+    fn from(err: ReqwestError) -> Self {
+        TransactionError::PriceFetchError(err.to_string())
+    }
+}
+
+impl From<SqlxError> for TransactionError {
+    fn from(err: SqlxError) -> Self {
+        TransactionError::SqlxError(err)
+    }
+}
 
 pub struct TransactionHandler;
 
@@ -16,15 +77,18 @@ impl TransactionHandler {
         &self,
         info: &TransactionData,
         swap_date: &str,
-    ) -> Result<(String, f64, f64, String), Box<dyn Error>> {
-        let in_coin = info.coins.get(0).ok_or("Missing in_coin")?;
-        let coin_name = coin_name_from_pool(&in_coin.asset).ok_or("Error parsing in_asset")?;
-        let in_amount = parse_f64(&in_coin.amount)?;
+    ) -> Result<(String, f64, f64, String), TransactionError> {
+        let in_coin = info.coins.get(0).ok_or(TransactionError::MissingInCoin)?;
+        let coin_name =
+            coin_name_from_pool(&in_coin.asset).ok_or(TransactionError::MissingAssetName)?;
+        let in_amount = parse_f64(&in_coin.amount).expect("Floating point parse error");
         let in_amount_usd = self
             .convert_amount_to_usd(&coin_name, swap_date, in_amount)
             .await?;
-        let in_asset = asset_name_from_pool(&in_coin.asset).ok_or("Error parsing asset name")?;
+        let in_asset =
+            asset_name_from_pool(&in_coin.asset).ok_or(TransactionError::MissingAssetName)?;
         let in_address = info.address.clone();
+
         Ok((
             in_asset,
             convert_to_standard_unit(in_amount, 8),
@@ -38,19 +102,26 @@ impl TransactionHandler {
         asset_name: &str,
         date: &str,
         amount: f64,
-    ) -> Result<f64, Box<dyn std::error::Error>> {
+    ) -> Result<f64, TransactionError> {
         let mut coingecko = COINGECKO_INSTANCE.write().await;
         let coin_id = match coingecko.get_coin_id(&asset_name) {
             Some(coin_id) => coin_id,
             None => {
-                let coin_id = coingecko.search_coin(asset_name).await?;
-                coingecko.add_coin_id(&asset_name, &coin_id);
+                let coin_id = coingecko
+                    .search_coin(asset_name)
+                    .await
+                    .map_err(|_| TransactionError::CoinNotFound(asset_name.to_string()))?;
+                let coin_id = coin_id.unwrap();
+                coingecko.add_coin_id(&asset_name, coin_id.clone().as_ref());
                 coin_id
             }
         };
+
         let price_on_date = coingecko
-            .fetch_usd_price(coin_id.as_str().as_ref(), date)
-            .await?;
+            .fetch_usd_price(coin_id.as_str(), date)
+            .await
+            .map_err(|_| TransactionError::PriceFetchError(coin_id.clone()))?;
+
         let amount = convert_to_standard_unit(amount, 8);
         let t_amount = calculate_transaction_amount(amount.clone(), price_on_date);
         Ok((t_amount * 100.0).round() / 100.0)
@@ -58,13 +129,13 @@ impl TransactionHandler {
 
     pub async fn parse_transaction(
         swap: &SwapTransaction,
-    ) -> Result<SwapTransactionFromatted, Box<dyn Error>> {
-        if &swap.status != "success" {
-            return Err("Swap is in Progress".into());
+    ) -> Result<SwapTransactionFromatted, TransactionError> {
+        if swap.status != "success" {
+            return Err(TransactionError::InvalidStatus);
         }
 
         // Parse swap_date & swap_time
-        let (swap_date, swap_time) = format_epoch_timestamp(&swap.date)?;
+        let (swap_date, swap_time) = format_epoch_timestamp(&swap.date).expect("Formatting error");
         let epoc_timestamp = parse_f64(convert_nano_to_sec(&swap.date).as_str()).unwrap() as i64;
 
         println!("Current Progress Date : {}", &swap_date);
@@ -74,12 +145,12 @@ impl TransactionHandler {
             .in_data
             .get(0)
             .and_then(|data| data.txID.clone())
-            .ok_or("Missing or invalid TxId")?;
+            .ok_or(TransactionError::MissingTxId)?;
 
         let handler = TransactionHandler;
 
         // Parse In Data
-        let in_data = swap.in_data.get(0).ok_or("No In Data Found")?;
+        let in_data = swap.in_data.get(0).ok_or(TransactionError::MissingInData)?;
         let (in_asset, in_amount, in_amount_usd, in_address) =
             handler.parse_data(in_data, &swap_date).await?;
 
@@ -87,7 +158,7 @@ impl TransactionHandler {
         out_data.reverse();
 
         // Parse Out Data
-        let out_data_1 = out_data.get(0).ok_or("No Out Data Found")?;
+        let out_data_1 = out_data.get(0).ok_or(TransactionError::MissingOutData)?;
         let (out_asset_1, out_amount_1, out_amount_1_usd, out_address_1) =
             handler.parse_data(out_data_1, &swap_date).await?;
 
@@ -123,7 +194,7 @@ impl TransactionHandler {
     pub async fn process_and_insert_transaction(
         mysql: &MySQL,
         actions: &Vec<SwapTransaction>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), TransactionError> {
         for swap in actions {
             let transaction_info = TransactionHandler::parse_transaction(&swap).await;
 

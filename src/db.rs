@@ -1,6 +1,6 @@
 use dotenv::dotenv;
-use sqlx::mysql::MySqlPool;
-use std::{env, error::Error};
+use sqlx::{mysql::MySqlPool, Error as SqlxError};
+use std::{env, fmt};
 
 use crate::{
     models::actions_model::SwapTransactionFromatted, routes::swap_history::OrderType,
@@ -13,26 +13,24 @@ pub struct MySQL {
 }
 
 impl MySQL {
-    pub async fn init() -> Self {
+    pub async fn init() -> Result<Self, SqlxError> {
         dotenv().ok();
         let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let pool = MySqlPool::connect(&database_url)
-            .await
-            .expect("Error Connecting to MySQL");
+        let pool = MySqlPool::connect(&database_url).await?;
         println!("Connected to MySQL");
-        MySQL { pool }
+        Ok(MySQL { pool })
     }
 
     pub async fn insert_new_record(
         &self,
         record: SwapTransactionFromatted,
-    ) -> Result<(), Box<dyn Error + Send>> {
+    ) -> Result<(), SqlxError> {
         // Parsing and formatting the data
         let date = format_date_for_sql(&record.date).unwrap();
         let time = record.time.clone();
 
         // Executing the insert query
-        let _ = sqlx::query!(
+        sqlx::query!(
             r#"
             INSERT INTO swap_history (timestamp, date, time, tx_id, in_asset, in_amount, in_amount_usd, in_address, out_asset_1, out_amount_1, out_amount_1_usd, out_address_1, out_asset_2, out_amount_2, out_amount_2_usd, out_address_2)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -55,14 +53,12 @@ impl MySQL {
             record.out_address_2
         )
         .execute(&self.pool)
-        .await;
+        .await?;
 
         Ok(())
     }
 
-    pub async fn fetch_latest_timestamp(
-        &self,
-    ) -> Result<Option<i64>, Box<dyn Error + Send + Sync>> {
+    pub async fn fetch_latest_timestamp(&self) -> Result<Option<i64>, SqlxError> {
         let result = sqlx::query_scalar!(
             r#"
             SELECT MAX(timestamp) as "timestamp: i64"
@@ -70,10 +66,10 @@ impl MySQL {
             "#,
         )
         .fetch_one(&self.pool)
-        .await
-        .expect("Unable to fetch Last Timesstamp");
+        .await?;
         Ok(result)
     }
+
     pub async fn fetch_all(
         &self,
         order: OrderType,
@@ -82,7 +78,7 @@ impl MySQL {
         offset: u64,
         search: Option<String>,
         date: Option<String>,
-    ) -> Result<Vec<SwapTransactionFromatted>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<SwapTransactionFromatted>, SqlxError> {
         let base_query = format!(
             r#"
             SELECT timestamp, date, time, tx_id, in_asset, in_amount, in_amount_usd, in_address,
@@ -100,7 +96,11 @@ impl MySQL {
             } else {
                 ""
             },
-            if date.is_some() { "AND date = ?" } else { "" },
+            if let Some(_) = date {
+                "AND date = ?"
+            } else {
+                ""
+            },
             sort_by,
             order,
         );
@@ -126,5 +126,17 @@ impl MySQL {
         Ok(records)
     }
 }
+
+// Custom error to implement Send for MySQL
+#[derive(Debug)]
+struct MySqlCustomError(SqlxError);
+
+impl fmt::Display for MySqlCustomError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for MySqlCustomError {}
 
 unsafe impl Send for MySQL {}

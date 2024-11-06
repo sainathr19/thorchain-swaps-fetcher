@@ -50,13 +50,13 @@ pub fn format_epoch_timestamp(epoch_nanos: &str) -> Result<(String, String), Box
 }
 
 pub fn coin_name_from_pool(pool_name: &str) -> Option<String> {
-    let re = Regex::new(r"[./~-]").unwrap();
+    let re = Regex::new(r"[./~\-_|:;,+*^$!?]").unwrap();
     let parts: Vec<&str> = re.split(pool_name).collect();
     parts.get(1).map(|s| s.to_string())
 }
 
 pub fn asset_name_from_pool(pool_name: &str) -> Option<String> {
-    let re = Regex::new(r"[./~-]").unwrap();
+    let re = Regex::new(r"[./~\-_|:;,+*^$!?]").unwrap();
     let mut parts = re.split(pool_name);
     match (parts.next(), parts.next()) {
         (Some(first), Some(second)) => Some(format!("{}.{}", first, second)),

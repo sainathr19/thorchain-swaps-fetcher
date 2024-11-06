@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 use serde::{Deserialize, Serialize};
+use sqlx::prelude::FromRow;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SwapCoin {
@@ -36,9 +37,9 @@ pub struct ActionsFetchResponse {
     pub meta: ActionsFetchMeta,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, FromRow, Serialize)]
 pub struct SwapTransactionFromatted {
-    pub timestamp: String,
+    pub timestamp: i64,
     pub date: String,
     pub time: String,
     pub in_asset: String,

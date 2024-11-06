@@ -1,9 +1,11 @@
 mod db;
 mod fetcher;
 mod models;
+mod routes;
 mod tests;
 mod utils;
-use actix_web::{get, App, HttpResponse, HttpServer, Responder};
+use actix_cors::Cors;
+use actix_web::{get, web::Data, App, HttpResponse, HttpServer, Responder};
 use db::MySQL;
 use fetcher::fetch_historical_data;
 use utils::cron::start_cronjob;
@@ -29,10 +31,16 @@ async fn main() -> std::io::Result<()> {
     println!("Historial Data Fetched . Now starting CronJob");
     let mysql_clone = mysql.clone();
     start_cronjob(mysql_clone).await;
-
+    let mysql_data = Data::new(mysql);
     // Start the HTTP server
-    HttpServer::new(move || App::new().service(home))
-        .bind(("0.0.0.0", 3000))?
-        .run()
-        .await
+    HttpServer::new(move || {
+        App::new()
+            .app_data(mysql_data.clone())
+            .wrap(Cors::permissive())
+            .service(home)
+            .configure(routes::swap_history::init)
+    })
+    .bind(("0.0.0.0", 3000))?
+    .run()
+    .await
 }

@@ -4,6 +4,7 @@ use std::{env, error::Error};
 
 use crate::{
     models::actions_model::SwapTransactionFromatted,
+    routes::swap_history::OrderType,
     utils::{format_date_for_sql, parse_u64},
 };
 
@@ -28,7 +29,6 @@ impl MySQL {
         record: SwapTransactionFromatted,
     ) -> Result<(), Box<dyn Error>> {
         // Parsing and formatting the data
-        let timestamp = parse_u64(&record.timestamp).unwrap();
         let date = format_date_for_sql(&record.date).unwrap();
         let time = record.time.clone();
 
@@ -38,7 +38,7 @@ impl MySQL {
             INSERT INTO swap_history (timestamp, date, time, tx_id, in_asset, in_amount, in_amount_usd, in_address, out_asset_1, out_amount_1, out_amount_1_usd, out_address_1, out_asset_2, out_amount_2, out_amount_2_usd, out_address_2)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
-            timestamp,
+            record.timestamp,
             date,
             time,
             record.tx_id,
@@ -73,5 +73,51 @@ impl MySQL {
         .fetch_one(&self.pool)
         .await?;
         Ok(result)
+    }
+    pub async fn fetch_all(
+        &self,
+        order: OrderType,
+        limit: u64,
+        sort_by: String,
+        offset: u64,
+        search: Option<String>,
+    ) -> Result<Vec<SwapTransactionFromatted>, Box<dyn std::error::Error>> {
+        // Build the base SQL query with ORDER, LIMIT, and OFFSET
+        let base_query = format!(
+            r#"
+            SELECT timestamp, date, time, tx_id, in_asset, in_amount, in_amount_usd, in_address,
+                   out_asset_1, out_amount_1, out_amount_1_usd, out_address_1,
+                   out_asset_2, out_amount_2, out_amount_2_usd, out_address_2
+            FROM swap_history
+            WHERE (1 = 1)
+            {}
+            ORDER BY {} {:?}
+            LIMIT ? OFFSET ?
+            "#,
+            if search.is_some() {
+                "AND (tx_id LIKE ? OR in_address LIKE ? OR out_address_1 LIKE ? OR out_address_2 LIKE ?)"
+            } else {
+                ""
+            },
+            sort_by,
+            order,
+        );
+
+        let mut query = sqlx::query_as::<_, SwapTransactionFromatted>(&base_query);
+
+        if let Some(search_term) = search {
+            let search_pattern = format!("%{}%", search_term.clone());
+            query = query
+                .bind(search_pattern.clone())
+                .bind(search_pattern.clone())
+                .bind(search_pattern.clone())
+                .bind(search_pattern.clone());
+        }
+
+        query = query.bind(limit as i64).bind(offset as i64);
+
+        let records = query.fetch_all(&self.pool).await?;
+
+        Ok(records)
     }
 }

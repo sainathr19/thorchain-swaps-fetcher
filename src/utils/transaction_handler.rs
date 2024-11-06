@@ -4,7 +4,7 @@ use crate::{
     models::actions_model::{SwapTransaction, SwapTransactionFromatted, TransactionData},
     utils::{
         asset_name_from_pool, coin_name_from_pool, convert_nano_to_sec, convert_to_standard_unit,
-        format_epoch_timestamp, parse_f64,
+        format_epoch_timestamp, parse_f64, parse_u64,
     },
 };
 use std::error::Error;
@@ -65,7 +65,7 @@ impl TransactionHandler {
 
         // Parse swap_date & swap_time
         let (swap_date, swap_time) = format_epoch_timestamp(&swap.date)?;
-        let epoc_timestamp = convert_nano_to_sec(&swap.date);
+        let epoc_timestamp = parse_f64(convert_nano_to_sec(&swap.date).as_str()).unwrap() as i64;
 
         println!("Current Progress Date : {}", &swap_date);
 

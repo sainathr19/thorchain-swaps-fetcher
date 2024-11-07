@@ -126,17 +126,3 @@ impl MySQL {
         Ok(records)
     }
 }
-
-// Custom error to implement Send for MySQL
-#[derive(Debug)]
-struct MySqlCustomError(SqlxError);
-
-impl fmt::Display for MySqlCustomError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::error::Error for MySqlCustomError {}
-
-unsafe impl Send for MySQL {}

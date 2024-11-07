@@ -12,25 +12,23 @@ pub async fn fetch_historical_data() -> Result<(), TransactionError> {
     let mut next_page_token = read_next_page_token_from_file().unwrap_or_default();
 
     loop {
-        println!("Next Page Token: {}", &next_page_token);
-
-        // Fetch actions using the next page token
         let resp = match MidGard::fetch_actions_with_nextpage(next_page_token.as_str()).await {
             Ok(resp) => resp,
             Err(err) => {
-                return Err(TransactionError::ApiError(format!(
-                    "Error fetching actions data: {:?}",
-                    err
-                )));
+                println!("Error fetching actions data: {:?}. Retrying...", err);
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
             }
         };
 
         if resp.actions.is_empty() {
+            println!("No more actions to process, exiting loop.");
             break;
         }
 
         let process_response =
             TransactionHandler::process_and_insert_transaction(&mysql, &resp.actions).await;
+
         match process_response {
             Ok(_) => {
                 next_page_token = resp.meta.nextPageToken.clone();
@@ -40,11 +38,11 @@ pub async fn fetch_historical_data() -> Result<(), TransactionError> {
                         e
                     )));
                 }
-                println!("Current Token in file: {}", &next_page_token);
+                println!("Updated next page token: {}", &next_page_token);
             }
             Err(err) => {
                 return Err(TransactionError::ProcessingError(format!(
-                    "An unexpected error occurred while processing the transaction: {:?}",
+                    "Error processing transaction: {:?}",
                     err
                 )));
             }
@@ -79,9 +77,6 @@ pub async fn fetch_latest_data(mysql: &MySQL) -> Result<(), TransactionError> {
             )));
         }
     };
-
-    println!("{:?}", &resp);
-
     let process_response =
         TransactionHandler::process_and_insert_transaction(&mysql_clone, &resp.actions).await;
     match process_response {

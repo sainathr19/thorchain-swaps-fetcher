@@ -16,12 +16,22 @@ pub struct TransactionData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TransactionMetaSwap {
+    pub inPriceUSD: String,
+    pub outPriceUSD: String,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TransactionMetaData {
+    pub swap: TransactionMetaSwap,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SwapTransaction {
     pub date: String,
     #[serde(rename = "in")]
     pub in_data: Vec<TransactionData>,
     #[serde(rename = "out")]
     pub out_data: Vec<TransactionData>,
+    pub metadata: TransactionMetaData,
     pub pools: Vec<String>,
     pub status: String,
 }

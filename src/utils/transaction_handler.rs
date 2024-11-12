@@ -90,7 +90,7 @@ impl TransactionHandler {
         date: &str,
         amount: f64,
     ) -> Result<f64, TransactionError> {
-        let coingecko = COINGECKO_INSTANCE.write().await;
+        let mut coingecko = COINGECKO_INSTANCE.write().await;
 
         let coin_id = match coingecko.get_coin_id(&asset_name) {
             Some(coin_id) => coin_id,
@@ -99,11 +99,12 @@ impl TransactionHandler {
                     println!("Error searching for coin ID for asset: {}", asset_name);
                     TransactionError::CoinNotFound(asset_name.to_string())
                 })?;
-
-                coin_id.ok_or_else(|| {
+                let coin_id  =coin_id.ok_or_else(|| {
                     println!("Coin ID not found after search for asset: {}", asset_name);
                     TransactionError::CoinNotFound(asset_name.to_string())
-                })?
+                })?;
+                coingecko.add_coin_id(&asset_name, &coin_id);
+                coin_id
             }
         };
         let price_on_date = coingecko

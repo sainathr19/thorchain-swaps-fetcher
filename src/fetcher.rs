@@ -77,8 +77,10 @@ pub async fn fetch_latest_data(mysql: &MySQL) -> Result<(), TransactionError> {
             )));
         }
     };
+    let mut actions = resp.actions.clone();
+    actions.reverse();
     let process_response =
-        TransactionHandler::process_and_insert_transaction(&mysql_clone, &resp.actions).await;
+        TransactionHandler::process_and_insert_transaction(&mysql_clone, &actions).await;
     match process_response {
         Ok(_) => (),
         Err(err) => {

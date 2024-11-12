@@ -186,10 +186,11 @@ impl TransactionHandler {
         mysql: &MySQL,
         actions: &Vec<SwapTransaction>,
     ) -> Result<(), TransactionError> {
+        
         for swap in actions {
             if swap.status != "success" {
-                println!("Found Pending Transaction , Stopping for now");
-                return Ok(());
+                println!("Transaction Pending");
+                continue;
             }
             let transaction_info = TransactionHandler::parse_transaction(&swap).await;
 
